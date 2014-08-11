@@ -1,6 +1,7 @@
 Ember.FlashMessageController = Ember.Controller.extend({
   queuedMessage: null,
   currentMessage: null,
+  dismissTimer: null,
 
   message: Ember.computed.alias('currentMessage'),
 
@@ -23,24 +24,60 @@ Ember.Handlebars.registerHelper('flashMessage', function(options) {
       container = options.data.keywords.controller.container,
       controller = container.lookup('controller:flashMessage'),
 
-      parent = Ember.ContainerView.extend({
-        hideAndShowMessage: function() {
-          var currentMessage = this.get('controller.currentMessage'),
-              view;
+  parent = Ember.ContainerView.extend({
 
-          if (currentMessage) {
-            view = Ember.View.create({
-              template: template
-            });
+      hideAndShowMessage: function() {
+        var currentMessage = this.get('controller.currentMessage'),
+          timerDuration = this.get('controller.dismissTimer') || null,
+          view;
+
+        if (currentMessage) {
+          view = Ember.View.create({
+            template: template
+          });
+          if (timerDuration !== null) {
+            this.scheduleTimer(timerDuration);
           }
+        }
+        else {
+          this.cancelTimer();
+        }
 
-          this.set('currentView', view);
-        }.observes('controller.currentMessage')
-      });
+        this.set('currentView', view);
+      }.observes('controller.currentMessage'),
+
+      sendDismissal: function() {
+        this.get('controller').send('dismissFlashMessage');
+      },
+
+      scheduleTimer: function(duration) {
+        var newTimer = Ember.run.later(this, function() {
+          this.sendDismissal();
+        }, duration);
+        this.set('myTimer', newTimer);
+      },
+
+      cancelTimer: function() {
+        var timerToKill = this.get('myTimer');
+        if (timerToKill !== undefined) {
+          Ember.run.cancel(timerToKill);
+        }
+      },
+
+      handleReflection: function() {
+        this.cancelTimer();
+      }.on('mouseEnter'),
+
+      resetTimer: function() {
+        var timerDuration = this.get('controller.dismissTimer') || null;
+        if (timerDuration !== null) {
+          this.scheduleTimer(timerDuration/2);
+        }
+      }.on('mouseLeave')
+    });
 
   options.hash.controller = controller;
   options.hashTypes = options.hashTypes || {};
-
   Ember.Handlebars.helpers.view.call(this, parent, options);
 });
 Ember.Application.initializer({
@@ -50,7 +87,7 @@ Ember.Application.initializer({
   }
 });
 Ember.FlashMessageRouteMixin = Ember.Mixin.create({
-  flashMessage: function(message, messageType) {
+  flashMessage: function(message, messageType, dismissTimer) {
     var controller = this.controllerFor('flashMessage');
 
     var messageObject = Ember.Object.create({
@@ -59,6 +96,10 @@ Ember.FlashMessageRouteMixin = Ember.Mixin.create({
 
     if(typeof messageType !== 'undefined') {
       messageObject.set('type', messageType);
+    }
+
+    if(typeof dismissTimer !== 'undefined') {
+      controller.set('dismissTimer', dismissTimer);
     }
 
     controller.set('queuedMessage', messageObject);
